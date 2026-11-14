@@ -1,5 +1,5 @@
 
-function UploadPanel({ documents, setDocuments }) {
+function UploadPanel({ documents, setDocuments, onUploadComplete }) {
   async function handleFileChange(e) {
     const files = Array.from(e.target.files);
 
@@ -25,11 +25,11 @@ function UploadPanel({ documents, setDocuments }) {
           body: formData,
         });
 
-        if (!response.ok) {
-          throw new Error("Upload failed");
-        }
-
         const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.detail || "Upload failed");
+        }
 
         setDocuments((prev) =>
           prev.map((doc) =>
@@ -37,8 +37,11 @@ function UploadPanel({ documents, setDocuments }) {
               ? {
                   ...doc,
                   status: "ready",
+                  backendDocumentId: result.document_id,
                   pageCount: result.page_count,
                   preview: result.preview,
+                  chunkCount: result.chunk_count,
+                  embeddingDimensions: result.embedding_dimensions,
                 }
               : doc
           )
@@ -49,106 +52,106 @@ function UploadPanel({ documents, setDocuments }) {
         setDocuments((prev) =>
           prev.map((doc) =>
             doc.id === id
-              ? { ...doc, status: "error" }
+              ? {
+                  ...doc,
+                  status: "error",
+                  error: error.message,
+                }
               : doc
           )
         );
       }
     }
 
+    // Refresh documents and dashboard data from the database
+    if (onUploadComplete) {
+      await onUploadComplete();
+    }
+
     e.target.value = "";
   }
 
   return (
-    <div className="p-6">
-      <label
-        htmlFor="pdf-upload"
-        className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 rounded-xl py-12 px-6 text-center cursor-pointer hover:border-indigo-500 transition-colors bg-slate-900"
-      >
-        <div className="w-12 h-12 rounded-lg bg-indigo-600/20 flex items-center justify-center mb-4">
-          <span className="text-indigo-400 text-xl">↑</span>
-        </div>
+    <div className="bg-slate-900 border border-slate-700 rounded-xl p-5">
+      <h2 className="text-xl font-semibold mb-2">
+        Upload Research Papers
+      </h2>
 
-        <p className="font-medium text-white mb-1">
-          Upload your research paper
-        </p>
+      <p className="text-slate-400 text-sm mb-4">
+        Upload PDF files to start researching with AI.
+      </p>
 
-        <p className="text-sm text-slate-500 mb-4">
-          Drag & drop a PDF or click to browse
-        </p>
+      <input
+        type="file"
+        accept=".pdf"
+        multiple
+        onChange={handleFileChange}
+        className="block w-full text-sm text-slate-300
+        file:mr-4 file:py-2 file:px-4
+        file:rounded-lg file:border-0
+        file:bg-blue-600 file:text-white
+        hover:file:bg-blue-700"
+      />
 
-        <span className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-          Choose file
-        </span>
-
-        <input
-          id="pdf-upload"
-          type="file"
-          accept="application/pdf"
-          multiple
-          onChange={handleFileChange}
-          className="hidden"
-        />
-
-        <p className="text-xs text-slate-600 mt-4">
-          PDF · max 50MB
-        </p>
-      </label>
-
-      <div className="flex flex-wrap gap-2 mt-4">
-        {[
-          "Instant summaries",
-          "Citation extraction",
-          "Methodology analysis",
-          "Key findings",
-        ].map((tag) => (
-          <span
-            key={tag}
-            className="text-sm text-slate-400 border border-slate-700 rounded-full px-3 py-1.5"
+      <div className="mt-5 space-y-3">
+        {documents.map((doc) => (
+          <div
+            key={doc.id}
+            className="bg-slate-800 border border-slate-700 rounded-lg p-4"
           >
-            {tag}
-          </span>
-        ))}
-      </div>
-
-      {documents.length > 0 && (
-        <ul className="mt-6 space-y-4">
-          {documents.map((doc) => (
-            <li
-              key={doc.id}
-              className="text-sm bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-slate-200"
-            >
+            <div className="flex justify-between items-center gap-3">
               <p className="font-medium break-all">
-                📄 {doc.name} · {doc.status}
+                {doc.name}
               </p>
 
-              {doc.status === "ready" && (
-                <>
-                  <p className="text-xs text-slate-400 mt-2">
-                    Total Pages: {doc.pageCount}
-                  </p>
+              <span
+                className={`text-xs px-2 py-1 rounded ${
+                  doc.status === "ready"
+                    ? "bg-green-900 text-green-300"
+                    : doc.status === "error"
+                    ? "bg-red-900 text-red-300"
+                    : "bg-yellow-900 text-yellow-300"
+                }`}
+              >
+                {doc.status}
+              </span>
+            </div>
 
-                  <div className="mt-3">
-                    <p className="text-indigo-400 font-medium mb-2">
-                      Extracted Text Preview
-                    </p>
-
-                    <div className="bg-slate-900 rounded-lg p-3 text-slate-300 text-xs leading-6 whitespace-pre-wrap max-h-64 overflow-y-auto">
-                      {doc.preview || "No text found in this PDF."}
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {doc.status === "error" && (
-                <p className="text-xs text-red-400 mt-2">
-                  Upload failed. Please try again.
+            {doc.status === "ready" && (
+              <div className="mt-3 text-sm text-slate-400 space-y-1">
+                <p>Pages: {doc.pageCount ?? "N/A"}</p>
+                <p>Chunks: {doc.chunkCount ?? "N/A"}</p>
+                <p>
+                  Embedding Dimensions:{" "}
+                  {doc.embeddingDimensions ?? "N/A"}
                 </p>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+                {doc.backendDocumentId && (
+                  <p className="break-all">
+                    Document ID: {doc.backendDocumentId}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {doc.status === "error" && (
+              <p className="text-red-400 text-sm mt-2">
+                {doc.error}
+              </p>
+            )}
+
+            {doc.preview && (
+              <div className="mt-3">
+                <p className="text-sm font-medium text-slate-300 mb-1">
+                  Extracted Text Preview:
+                </p>
+                <p className="text-xs text-slate-400 whitespace-pre-wrap">
+                  {doc.preview}
+                </p>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
